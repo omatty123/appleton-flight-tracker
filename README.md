@@ -50,7 +50,42 @@ OpenSky live state vectors do not include a reliable live destination field. Des
 
 This is a dynamic Python app, so GitHub Pages is not enough. It needs a host that can run `python3 server.py` continuously and persist the SQLite file.
 
-### Recommended: Render Web Service
+### Recommended Free Persistence: Railway
+
+Railway currently supports a small persistent volume on the Free plan, which fits this SQLite app better than Render Free.
+
+1. Create a Railway project from this GitHub repo.
+2. Set the start command:
+
+```bash
+python3 server.py
+```
+
+3. Add a volume mounted at:
+
+```bash
+/data
+```
+
+4. Add environment variables:
+
+```bash
+HOST=0.0.0.0
+LOCATION_LABEL=Appleton, WI
+HOME_LAT=your approximate latitude
+HOME_LON=your approximate longitude
+FLIGHT_TRACKER_DB=/data/flights.sqlite3
+COLLECT_MIN_SPEED_MPH=300
+COLLECT_MIN_ALTITUDE_FT=10000
+OPENSKY_CLIENT_ID=...
+OPENSKY_CLIENT_SECRET=...
+```
+
+Railway provides the `PORT` variable automatically, so you usually do not need to set it.
+
+### Render Web Service
+
+Render Free can run the web service, but Free web services cannot attach persistent disks. That means SQLite history will be lost on restart/redeploy unless you use a paid persistent disk or move the data to Postgres.
 
 1. Open Render and create a new **Web Service** from this GitHub repo.
 2. Use:
