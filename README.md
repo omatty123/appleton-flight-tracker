@@ -26,7 +26,9 @@ OPENSKY_CLIENT_ID=...
 OPENSKY_CLIENT_SECRET=...
 ```
 
-If those are blank, it will attempt anonymous OpenSky requests.
+If those are blank, it will attempt anonymous OpenSky requests. If OpenSky is
+unreachable from the host, the app can fall back to Airplanes.live ADS-B point
+queries while keeping the same local speed/altitude filter.
 
 ## Route and Aircraft Enrichment
 
@@ -77,6 +79,7 @@ HOME_LON=your approximate longitude
 FLIGHT_TRACKER_DB=/data/flights.sqlite3
 COLLECT_MIN_SPEED_MPH=300
 COLLECT_MIN_ALTITUDE_FT=10000
+AIRPLANES_LIVE_FALLBACK=1
 OPENSKY_CLIENT_ID=...
 OPENSKY_CLIENT_SECRET=...
 ```
@@ -105,6 +108,7 @@ HOME_LON=your approximate longitude
 FLIGHT_TRACKER_DB=/var/data/flights.sqlite3
 COLLECT_MIN_SPEED_MPH=300
 COLLECT_MIN_ALTITUDE_FT=10000
+AIRPLANES_LIVE_FALLBACK=1
 OPENSKY_CLIENT_ID=...
 OPENSKY_CLIENT_SECRET=...
 ```

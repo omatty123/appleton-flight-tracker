@@ -29,11 +29,14 @@ OPEN_SKY_TOKEN_URL = (
     "https://auth.opensky-network.org/auth/realms/opensky-network/"
     "protocol/openid-connect/token"
 )
+AIRPLANES_LIVE_POINT_URL = "https://api.airplanes.live/v2/point"
 ADSBDB_BASE_URL = "https://api.adsbdb.com/v0"
 USER_AGENT = "appleton-flight-tracker/1.0"
 METERS_TO_FEET = 3.280839895
 MS_TO_MPH = 2.2369362921
 MS_TO_FPM = 196.8503937
+KNOTS_TO_MS = 0.5144444444
+MILES_TO_NM = 0.868976242
 DEFAULT_NTFY_SERVER = "https://ntfy.sh"
 
 
@@ -88,6 +91,8 @@ class Settings:
     opensky_client_id: str
     opensky_client_secret: str
     opensky_timeout_seconds: int
+    airplanes_live_fallback_enabled: bool
+    airplanes_live_timeout_seconds: int
     adsbdb_enabled: bool
     adsbdb_cache_hours: int
     adsbdb_timeout_seconds: int
@@ -128,6 +133,15 @@ def load_settings() -> Settings:
         opensky_client_id=os.environ.get("OPENSKY_CLIENT_ID", "").strip(),
         opensky_client_secret=os.environ.get("OPENSKY_CLIENT_SECRET", "").strip(),
         opensky_timeout_seconds=max(3, env_int("OPENSKY_TIMEOUT_SECONDS", 12)),
+        airplanes_live_fallback_enabled=os.environ.get(
+            "AIRPLANES_LIVE_FALLBACK", "1"
+        )
+        .strip()
+        .lower()
+        not in {"0", "false", "no"},
+        airplanes_live_timeout_seconds=max(
+            3, env_int("AIRPLANES_LIVE_TIMEOUT_SECONDS", 12)
+        ),
         adsbdb_enabled=os.environ.get("ADSBDB_ENABLED", "1").strip().lower()
         not in {"0", "false", "no"},
         adsbdb_cache_hours=max(1, env_int("ADSBDB_CACHE_HOURS", 12)),
@@ -370,6 +384,22 @@ def ms_to_mph(value: float | None) -> float | None:
 
 def ms_to_fpm(value: float | None) -> float | None:
     return None if value is None else value * MS_TO_FPM
+
+
+def optional_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def altitude_feet_to_meters(value: Any) -> float | None:
+    if isinstance(value, str) and value.strip().lower() in {"ground", "gnd"}:
+        return 0.0
+    feet = optional_float(value)
+    return None if feet is None else feet / METERS_TO_FEET
 
 
 def collection_speed_threshold_ms() -> float:
@@ -698,6 +728,71 @@ def state_to_observation(state: list[Any], observed_at: int) -> dict[str, Any] |
         "bearing_deg": bearing,
         "overhead": 1 if distance <= settings.overhead_radius_miles else 0,
         "raw_json": json.dumps(state, separators=(",", ":")),
+    }
+
+
+def airplanes_live_to_observation(
+    aircraft: dict[str, Any], observed_at: int
+) -> dict[str, Any] | None:
+    icao24 = str(aircraft.get("hex") or "").strip().lower()
+    latitude = optional_float(aircraft.get("lat"))
+    longitude = optional_float(aircraft.get("lon"))
+    if not icao24 or latitude is None or longitude is None:
+        return None
+
+    distance = haversine_miles(settings.home_lat, settings.home_lon, latitude, longitude)
+    if distance > settings.search_radius_miles:
+        return None
+
+    baro_altitude_m = altitude_feet_to_meters(aircraft.get("alt_baro"))
+    geo_altitude_m = altitude_feet_to_meters(aircraft.get("alt_geom"))
+    altitude_m = geo_altitude_m if geo_altitude_m is not None else baro_altitude_m
+    ground_speed_knots = optional_float(aircraft.get("gs"))
+    velocity_ms = (
+        None if ground_speed_knots is None else ground_speed_knots * KNOTS_TO_MS
+    )
+    on_ground = 1 if str(aircraft.get("alt_baro", "")).lower() == "ground" else 0
+    if (
+        on_ground
+        or velocity_ms is None
+        or altitude_m is None
+        or velocity_ms < collection_speed_threshold_ms()
+        or altitude_m < collection_altitude_threshold_m()
+    ):
+        return None
+
+    seen = optional_float(aircraft.get("seen"))
+    response_time = int(observed_at - seen) if seen is not None else observed_at
+    vertical_rate_fpm = optional_float(
+        aircraft.get("geom_rate")
+        if aircraft.get("geom_rate") is not None
+        else aircraft.get("baro_rate")
+    )
+    bearing = bearing_deg(settings.home_lat, settings.home_lon, latitude, longitude)
+
+    return {
+        "observed_at": observed_at,
+        "response_time": response_time,
+        "icao24": icao24,
+        "callsign": clean_callsign(aircraft.get("flight")),
+        "origin_country": None,
+        "longitude": longitude,
+        "latitude": latitude,
+        "baro_altitude_m": baro_altitude_m,
+        "geo_altitude_m": geo_altitude_m,
+        "on_ground": on_ground,
+        "velocity_ms": velocity_ms,
+        "true_track_deg": optional_float(aircraft.get("track")),
+        "vertical_rate_ms": (
+            None if vertical_rate_fpm is None else vertical_rate_fpm / MS_TO_FPM
+        ),
+        "squawk": aircraft.get("squawk"),
+        "position_source": 0,
+        "category": None,
+        "distance_miles": distance,
+        "bearing_deg": bearing,
+        "overhead": 1 if distance <= settings.overhead_radius_miles else 0,
+        "raw_json": json.dumps(aircraft, separators=(",", ":")),
     }
 
 
@@ -1191,6 +1286,25 @@ def fetch_opensky_states() -> tuple[int | None, dict[str, Any]]:
         return response.status, {"source": source, **json.loads(response.read())}
 
 
+def fetch_airplanes_live_aircraft() -> tuple[int | None, dict[str, Any]]:
+    radius_nm = max(1, min(250, round(settings.search_radius_miles * MILES_TO_NM)))
+    lat = f"{settings.home_lat:.6f}".rstrip("0").rstrip(".")
+    lon = f"{settings.home_lon:.6f}".rstrip("0").rstrip(".")
+    url = f"{AIRPLANES_LIVE_POINT_URL}/{lat}/{lon}/{radius_nm}"
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": USER_AGENT},
+        method="GET",
+    )
+    with urllib.request.urlopen(
+        request, timeout=settings.airplanes_live_timeout_seconds
+    ) as response:
+        return response.status, {
+            "source": "airplanes-live",
+            **json.loads(response.read().decode("utf-8")),
+        }
+
+
 def record_api_event(
     ok: bool,
     source: str,
@@ -1262,6 +1376,34 @@ def purge_below_collection_filter() -> int:
         return cursor.rowcount
 
 
+def store_poll_success(
+    observations: list[dict[str, Any]],
+    source: str,
+    status_code: int | None,
+    warning: str | None = None,
+) -> dict[str, Any]:
+    persist_observations(observations)
+    notifications = process_notifications(observations)
+    message = f"Stored {len(observations)} fast/high aircraft observations."
+    if warning:
+        message = f"{warning} {message}"
+    if notifications:
+        message += f" Sent {len(notifications)} notification(s)."
+    status = {
+        "ok": True,
+        "message": message,
+        "aircraft_count": len(observations),
+        "notification_count": len(notifications),
+        "source": source,
+        "status_code": status_code,
+        "at": int(time.time()),
+    }
+    if warning:
+        status["warning"] = warning
+    record_api_event(True, source, message, status_code, len(observations))
+    return status
+
+
 def poll_opensky(force: bool = False) -> dict[str, Any]:
     global last_poll_at, last_status
 
@@ -1272,6 +1414,7 @@ def poll_opensky(force: bool = False) -> dict[str, Any]:
 
         status_code = None
         source = "opensky"
+        message = ""
         try:
             status_code, payload = fetch_opensky_states()
             source = payload.pop("source", source)
@@ -1282,22 +1425,8 @@ def poll_opensky(force: bool = False) -> dict[str, Any]:
                 for state in states
                 if (observation := state_to_observation(state, observed_at)) is not None
             ]
-            persist_observations(observations)
-            notifications = process_notifications(observations)
-            message = f"Stored {len(observations)} fast/high aircraft observations."
-            if notifications:
-                message += f" Sent {len(notifications)} notification(s)."
-            last_status = {
-                "ok": True,
-                "message": message,
-                "aircraft_count": len(observations),
-                "notification_count": len(notifications),
-                "source": source,
-                "status_code": status_code,
-                "at": int(time.time()),
-            }
+            last_status = store_poll_success(observations, source, status_code)
             last_poll_at = time.time()
-            record_api_event(True, source, message, status_code, len(observations))
             return last_status
 
         except urllib.error.HTTPError as exc:
@@ -1308,6 +1437,38 @@ def poll_opensky(force: bool = False) -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001 - keep the local service alive.
             message = f"Polling failed: {exc}"
             traceback.print_exc()
+
+        if settings.airplanes_live_fallback_enabled:
+            try:
+                fallback_status, payload = fetch_airplanes_live_aircraft()
+                source = payload.pop("source", "airplanes-live")
+                observed_at = int((payload.get("now") or int(time.time() * 1000)) / 1000)
+                observations = [
+                    observation
+                    for aircraft in payload.get("ac", [])
+                    if (
+                        observation := airplanes_live_to_observation(
+                            aircraft, observed_at
+                        )
+                    )
+                    is not None
+                ]
+                warning = f"OpenSky unavailable ({message}); using Airplanes.live fallback."
+                last_status = store_poll_success(
+                    observations,
+                    source,
+                    fallback_status,
+                    warning=warning,
+                )
+                last_poll_at = time.time()
+                return last_status
+            except urllib.error.HTTPError as exc:
+                message += f"; Airplanes.live returned HTTP {exc.code}: {exc.reason}"
+            except urllib.error.URLError as exc:
+                message += f"; could not reach Airplanes.live: {exc.reason}"
+            except Exception as exc:  # noqa: BLE001 - keep the local service alive.
+                message += f"; Airplanes.live fallback failed: {exc}"
+                traceback.print_exc()
 
         last_status = {
             "ok": False,
@@ -1484,6 +1645,7 @@ def app_config() -> dict[str, Any]:
         "has_opensky_credentials": bool(
             settings.opensky_client_id and settings.opensky_client_secret
         ),
+        "airplanes_live_fallback": settings.airplanes_live_fallback_enabled,
         "adsbdb_enabled": settings.adsbdb_enabled,
         "adsbdb_cache_hours": settings.adsbdb_cache_hours,
         "collection_filter": {
