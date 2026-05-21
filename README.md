@@ -46,6 +46,48 @@ Observations are stored in SQLite at `data/flights.sqlite3` by default. Each pol
 
 OpenSky live state vectors do not include a reliable live destination field. Destination and origin are enriched from ADSBDB when its callsign database has a match.
 
+## Deploy It Online
+
+This is a dynamic Python app, so GitHub Pages is not enough. It needs a host that can run `python3 server.py` continuously and persist the SQLite file.
+
+### Recommended: Render Web Service
+
+1. Open Render and create a new **Web Service** from this GitHub repo.
+2. Use:
+
+```bash
+Start command: python3 server.py
+```
+
+3. Add environment variables:
+
+```bash
+HOST=0.0.0.0
+PORT=10000
+LOCATION_LABEL=Appleton, WI
+HOME_LAT=your approximate latitude
+HOME_LON=your approximate longitude
+FLIGHT_TRACKER_DB=/var/data/flights.sqlite3
+COLLECT_MIN_SPEED_MPH=300
+COLLECT_MIN_ALTITUDE_FT=10000
+OPENSKY_CLIENT_ID=...
+OPENSKY_CLIENT_SECRET=...
+```
+
+4. Add a persistent disk mounted at:
+
+```bash
+/var/data
+```
+
+Without a persistent disk, the SQLite history can be lost when the service redeploys or restarts.
+
+### Important Notes
+
+- Use approximate coordinates if this will be public. The app exposes the configured map center to the browser.
+- Free/sleeping web services will stop collecting data while asleep. Use an always-on instance if long-term patterns matter.
+- Fly.io and Railway are also good options because both support persistent volumes for SQLite.
+
 ## Phone Notifications
 
 The app can send phone pings through [ntfy](https://ntfy.sh/). Install the ntfy app, subscribe to a long private topic name, then add the same topic to `.env`:

@@ -82,6 +82,7 @@ class Settings:
     search_radius_miles: float
     overhead_radius_miles: float
     poll_interval_seconds: int
+    host: str
     port: int
     db_path: Path
     opensky_client_id: str
@@ -121,6 +122,7 @@ def load_settings() -> Settings:
         search_radius_miles=env_float("SEARCH_RADIUS_MILES", 45.0),
         overhead_radius_miles=env_float("OVERHEAD_RADIUS_MILES", 8.0),
         poll_interval_seconds=max(30, env_int("POLL_INTERVAL_SECONDS", 120)),
+        host=os.environ.get("HOST", "127.0.0.1").strip() or "127.0.0.1",
         port=env_int("PORT", 8787),
         db_path=db_path,
         opensky_client_id=os.environ.get("OPENSKY_CLIENT_ID", "").strip(),
@@ -1631,8 +1633,9 @@ def main() -> None:
         )
     threading.Thread(target=poll_loop, daemon=True).start()
 
-    server = ThreadingHTTPServer(("127.0.0.1", settings.port), FlightTrackerHandler)
-    print(f"Flight tracker running at http://127.0.0.1:{settings.port}")
+    server = ThreadingHTTPServer((settings.host, settings.port), FlightTrackerHandler)
+    display_host = "127.0.0.1" if settings.host == "0.0.0.0" else settings.host
+    print(f"Flight tracker running at http://{display_host}:{settings.port}")
     print(f"SQLite history: {settings.db_path}")
     try:
         server.serve_forever()
