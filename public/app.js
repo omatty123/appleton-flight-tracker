@@ -114,7 +114,7 @@ function registrationLabel(aircraft) {
 
 function statusPill(aircraft) {
   if (aircraft.overhead) return "Overhead";
-  if (aircraft.destination || aircraft.airline) return "Route";
+  if (aircraft.destination || aircraft.origin) return "Route";
   return aircraft.bearing_cardinal || "Nearby";
 }
 
