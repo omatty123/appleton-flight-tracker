@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Appleton Flight Tracker</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="map-panel" aria-label="Aircraft map">
+        <div id="map"></div>
+        <div class="map-toolbar">
+          <div>
+            <span class="eyebrow">Centered on</span>
+            <strong id="locationLabel">Appleton, WI</strong>
+          </div>
+          <button id="refreshButton" type="button">
+            <i data-lucide="refresh-cw"></i>
+            Refresh
+          </button>
+        </div>
+      </section>
+
+      <aside class="side-panel">
+        <header class="panel-header">
+          <div>
+            <h1>Overhead Flights</h1>
+            <p id="statusLine">Starting tracker...</p>
+          </div>
+          <span id="credentialBadge" class="badge">OpenSky</span>
+        </header>
+
+        <section class="metric-grid" aria-label="Current summary">
+          <div class="metric">
+            <span>Fast/high</span>
+            <strong id="visibleCount">0</strong>
+          </div>
+          <div class="metric">
+            <span>Overhead</span>
+            <strong id="overheadCount">0</strong>
+          </div>
+          <div class="metric">
+            <span>Closest</span>
+            <strong id="closestDistance">--</strong>
+          </div>
+        </section>
+
+        <section class="active-filter">
+          <span class="eyebrow">Showing only</span>
+          <strong id="filterSummary">Fast, high aircraft</strong>
+        </section>
+
+        <section class="alert-status">
+          <div>
+            <span class="eyebrow">Phone alerts</span>
+            <strong id="notificationStatus">Off</strong>
+            <p id="notificationRules">Enable ntfy in .env to send look-up pings.</p>
+          </div>
+          <button id="testAlertButton" type="button" class="secondary-button">
+            <i data-lucide="bell-ring"></i>
+            Test
+          </button>
+        </section>
+
+        <section class="section-block detail-block">
+          <div class="section-title">
+            <h2>Flight Details</h2>
+            <button id="clearSelection" type="button" class="icon-button" title="Show nearest flight">
+              <i data-lucide="locate-fixed"></i>
+            </button>
+          </div>
+          <div id="detailsPanel" class="details-panel empty-state">
+            Select an aircraft on the map or list.
+          </div>
+        </section>
+
+        <section class="section-block">
+          <div class="section-title">
+            <h2>Aircraft</h2>
+            <span id="lastUpdated">--</span>
+          </div>
+          <div id="aircraftList" class="aircraft-list"></div>
+        </section>
+
+        <section class="section-block">
+          <div class="section-title">
+            <h2>Patterns</h2>
+            <select id="historyRange" aria-label="History range">
+              <option value="6">6 hours</option>
+              <option value="24" selected>24 hours</option>
+              <option value="168">7 days</option>
+              <option value="720">30 days</option>
+            </select>
+          </div>
+          <div class="pattern-metrics">
+            <span><strong id="historyAircraft">0</strong> aircraft</span>
+            <span><strong id="historyObservations">0</strong> observations</span>
+          </div>
+          <div id="hourlyChart" class="hourly-chart" aria-label="Hourly aircraft activity"></div>
+          <div id="closestPasses" class="compact-list"></div>
+        </section>
+      </aside>
+    </main>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
