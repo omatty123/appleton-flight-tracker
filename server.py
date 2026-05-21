@@ -38,6 +38,7 @@ MS_TO_FPM = 196.8503937
 KNOTS_TO_MS = 0.5144444444
 MILES_TO_NM = 0.868976242
 DEFAULT_NTFY_SERVER = "https://ntfy.sh"
+ROUTE_MAX_DESTINATION_TRACK_DELTA_DEG = 60.0
 
 
 def load_env() -> None:
@@ -463,6 +464,43 @@ def route_from_enrichment(enrichment: dict[str, Any] | None) -> dict[str, Any] |
     }
 
 
+def route_track_delta_deg(
+    route: dict[str, Any] | None,
+    latitude: float | None,
+    longitude: float | None,
+    track: float | None,
+) -> float | None:
+    destination = (route or {}).get("destination") or {}
+    destination_lat = optional_float(destination.get("lat"))
+    destination_lon = optional_float(destination.get("lon"))
+    if (
+        latitude is None
+        or longitude is None
+        or track is None
+        or destination_lat is None
+        or destination_lon is None
+    ):
+        return None
+
+    destination_bearing = bearing_deg(
+        latitude,
+        longitude,
+        destination_lat,
+        destination_lon,
+    )
+    return angular_difference_deg(track, destination_bearing)
+
+
+def route_matches_track(
+    route: dict[str, Any] | None,
+    latitude: float | None,
+    longitude: float | None,
+    track: float | None,
+) -> bool:
+    delta = route_track_delta_deg(route, latitude, longitude, track)
+    return delta is None or delta <= ROUTE_MAX_DESTINATION_TRACK_DELTA_DEG
+
+
 def aircraft_from_enrichment(enrichment: dict[str, Any] | None) -> dict[str, Any] | None:
     if not enrichment or not enrichment.get("ok"):
         return None
@@ -807,13 +845,30 @@ def public_aircraft(
     )
     track = row["true_track_deg"]
     bearing = row["bearing_deg"]
-    route = route_from_enrichment(enrichment)
+    route_lookup = route_from_enrichment(enrichment)
+    route = (
+        route_lookup
+        if route_matches_track(
+            route_lookup,
+            row["latitude"],
+            row["longitude"],
+            track,
+        )
+        else None
+    )
     aircraft = aircraft_from_enrichment(enrichment)
     origin = route.get("origin") if route else None
     destination = route.get("destination") if route else None
-    airline = route.get("airline") if route else None
+    airline = route_lookup.get("airline") if route_lookup else None
     if destination:
-        destination_note = "Route enriched from ADSBDB by callsign."
+        destination_note = (
+            "Route lookup from ADSBDB by callsign; it is not a live flight plan."
+        )
+    elif route_lookup:
+        destination_note = (
+            "ADSBDB route lookup conflicts with this aircraft's current track, "
+            "so the app hid it."
+        )
     elif row["callsign"]:
         destination_note = "No route match found in ADSBDB for this callsign yet."
     else:
@@ -888,12 +943,23 @@ def observation_approach_info(observation: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def route_summary_for_notification(
-    icao24: str,
-    callsign: str | None,
-) -> str | None:
-    enrichment = get_enrichment(icao24, callsign, allow_fetch=True)
-    route = route_from_enrichment(enrichment)
+def route_summary_for_notification(observation: dict[str, Any]) -> str | None:
+    enrichment = get_enrichment(
+        observation["icao24"],
+        observation["callsign"],
+        allow_fetch=True,
+    )
+    route_lookup = route_from_enrichment(enrichment)
+    route = (
+        route_lookup
+        if route_matches_track(
+            route_lookup,
+            observation["latitude"],
+            observation["longitude"],
+            observation["true_track_deg"],
+        )
+        else None
+    )
     if not route:
         return None
     origin = route.get("origin") or {}
@@ -917,7 +983,7 @@ def notification_message(
     distance = observation["distance_miles"]
     bearing = cardinal(observation["bearing_deg"]) or "nearby"
     route = (
-        route_summary_for_notification(observation["icao24"], observation["callsign"])
+        route_summary_for_notification(observation)
         if include_route
         else None
     )

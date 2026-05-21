@@ -36,7 +36,9 @@ The article you shared uses ADSBDB for the fields OpenSky does not provide. This
 
 - `https://api.adsbdb.com/v0/aircraft/{MODE_S}?callsign={CALLSIGN}`
 
-Those responses are cached in SQLite so refreshes do not repeatedly hit ADSBDB. You can turn enrichment off with:
+Those responses are cached in SQLite so refreshes do not repeatedly hit ADSBDB. ADSBDB route matches are based on the callsign, not a live airline flight plan, so a reused or stale flight number can resolve to the wrong origin/destination. The app hides a route lookup when its destination sharply conflicts with the aircraft's current track.
+
+You can turn enrichment off with:
 
 ```bash
 ADSBDB_ENABLED=0
@@ -46,7 +48,7 @@ ADSBDB_ENABLED=0
 
 Observations are stored in SQLite at `data/flights.sqlite3` by default. Each poll stores aircraft position, speed, altitude, heading, vertical rate, distance from home, and whether it was inside the overhead radius.
 
-OpenSky live state vectors do not include a reliable live destination field. Destination and origin are enriched from ADSBDB when its callsign database has a match.
+OpenSky live state vectors do not include a reliable live destination field. Destination and origin are shown from ADSBDB only when its callsign database has a match and that route lookup is consistent with the live track.
 
 ## Deploy It Online
 

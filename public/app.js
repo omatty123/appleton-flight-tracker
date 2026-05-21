@@ -411,7 +411,7 @@ function renderDetails() {
     </div>
     ${aircraft.aircraft?.photo_thumbnail ? `<img class="aircraft-photo" src="${escapeHtml(aircraft.aircraft.photo_thumbnail)}" alt="${escapeHtml(aircraftLabel(aircraft))} aircraft photo" loading="lazy" />` : ""}
     <div class="route-summary">
-      <span>Route</span>
+      <span>Route lookup</span>
       <strong>${escapeHtml(routeLabel(aircraft))}</strong>
     </div>
     <div class="details-grid">
